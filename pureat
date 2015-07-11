@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+""" Pureat - I tell you where to eat, just eat.
+
+This is a hackathon project by Hongli.Yin. I plan to make a command line tool that randomly picks a
+restaurant based on the eating schedule set by the user. If the user does not specify a category,
+the system will ramdomly picks a restaurant.
+
+This application is built on Yelp search API.
+
+"""
+
+import rauth
+import time
+import json
+import ConfigParser
+import datetime
+import random
+import sys
+import shelve
+import base64
+
+CONFIG_FILE     = "/Users/hongli.yin/hackathon/pureat.cfg"
+DB_PATH         = "/Users/hongli.yin/hackathon/pureat"
+CONSUMER_KEY    = "u8FqsQFCFrrsScrWpSVvnA"
+CONSUMER_SECRET = "twH3Fg6HNaeFnm6jayQlEGk_X6A"
+TOKEN           = "yP9_Kq0SAAm8jlLzavVuKat_or6c5u32"
+TOKEN_SECRET	= "HoxpUQ0_er1GbKZsM1vtyIyiUbI"
+
+class bcolors:
+        HEADER = '\033[95m'
+        OKBLUE = '\033[94m'
+        OKGREEN = '\033[92m'
+        WARNING = '\033[93m'
+        FAIL = '\033[91m'
+        ENDC = '\033[0m'
+        BOLD = '\033[1m'
+        UNDERLINE = '\033[4m'
+
+def main():
+        """ The user is not giving any parameters when executing the program. All the configuration
+        will be done in .cfg file. """
+        
+        # Read configuration file, get the location and eating schedule
+        config = ConfigParser.RawConfigParser(allow_no_value=True)
+        config.read(CONFIG_FILE)
+        location = config.get("info","location")
+        schedule = []
+        schedule.append(config.get("schedule","Mon"))
+        schedule.append(config.get("schedule","Tue"))
+        schedule.append(config.get("schedule","Wed"))
+        schedule.append(config.get("schedule","Thu"))
+        schedule.append(config.get("schedule","Fri"))
+        schedule.append(config.get("schedule","Sat"))
+        schedule.append(config.get("schedule","Sun"))
+        
+        # Determine the date
+        day = datetime.datetime.today().weekday()
+
+        # Compose Yelp search query and send the request
+        params = get_search_parameters(location,schedule[day])
+	data = get_results(params)
+
+        # Parse the response and ramdomly pick a resturant
+        # TODO: using a smarter algorithm
+        restaurant = random.choice(data["businesses"])
+        name = restaurant["name"]
+        print name
+
+        # Get user input if he decides to go to the restaurant
+        while (1):
+                decision = raw_input("Looks good?(yes/no) ")
+                if (decision == "no"):
+                        sys.exit()
+                if (decision == "yes"):
+                        break
+
+        # Store the result
+        key = name.encode('utf-8')
+        d = shelve.open(DB_PATH)
+        if (d.has_key(key)):
+                d[key] += 1
+        else:
+                d[key] = 1
+
+        # print database
+        print_db(d, name)
+
+def print_db(d, add_name):
+        """ Print the eating histroy in git-like style """
+
+        klist = d.keys()
+        nlist = [k.decode('utf-8') for k in klist]
+        max_name_len = len(max(nlist, key=len))
+        tlist = [str(d[k]) for k in klist]
+        max_time_len = len(max(tlist, key=len))
+        
+        print "\n" + bcolors.WARNING + "Pureat stat" + bcolors.ENDC
+        
+        for key in klist:
+                name = key.decode('utf-8')
+                name_pad = " " * (max_name_len - len(name))
+                time = d[key]
+                time_pad = " " * (max_time_len - len(str(time)))
+                time_pic = "+" * time
+                
+                print "",
+                if (add_name == name):
+                        print bcolors.OKGREEN + name + bcolors.ENDC,
+                else:
+                        print name,
+                
+                print "{}| {}{}".format(name_pad, time_pad, time),
+                print bcolors.OKGREEN + time_pic + bcolors.ENDC
+        
+
+def get_results(params):
+        """ Some hard-coded keys for using Yelp APIs """
+
+	#Obtain these from Yelp's manage access page
+        consumer_key = CONSUMER_KEY
+	consumer_secret = CONSUMER_SECRET
+	token = TOKEN
+	token_secret = TOKEN_SECRET
+	
+	session = rauth.OAuth1Session(
+		consumer_key = consumer_key
+		,consumer_secret = consumer_secret
+		,access_token = token
+		,access_token_secret = token_secret)
+		
+	request = session.get("http://api.yelp.com/v2/search",params=params)
+	
+	#Transforms the JSON API response into a Python dictionary
+	data = request.json()
+	session.close()
+	
+	return data
+		
+def get_search_parameters(location,category):
+        """ Set parameters for using Yelp APIs """
+
+	#See the Yelp API for more details
+	params = {}
+        if (category == "Anything"):
+                params["term"] = "restaurant"
+        else:
+	        params["term"] = "{} restaurant".format(category)
+	params["location"] = location
+	params["radius_filter"] = "2000"
+	params["limit"] = "10"
+ 
+	return params
+
+if __name__=="__main__":
+        main()
